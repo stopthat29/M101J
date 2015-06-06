@@ -16,6 +16,7 @@
 
 package course;
 
+import com.mongodb.BasicDBObject;
 import com.mongodb.ErrorCategory;
 import com.mongodb.MongoWriteException;
 import com.mongodb.client.MongoCollection;
@@ -28,8 +29,6 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.Random;
-
-import static com.mongodb.client.model.Filters.eq;
 
 public class UserDAO {
     private final MongoCollection<Document> usersCollection;
@@ -48,15 +47,21 @@ public class UserDAO {
         // create an object suitable for insertion into the user collection
         // be sure to add username and hashed password to the document. problem instructions
         // will tell you the schema that the documents must follow.
+        Document userInfo = new Document();
+        userInfo.put("_id", username);
+        userInfo.put("password", passwordHash);
 
         if (email != null && !email.equals("")) {
             // XXX WORK HERE
             // if there is an email address specified, add it to the document too.
+            userInfo.put("email", email);
         }
 
         try {
             // XXX WORK HERE
             // insert the document into the user collection here
+            System.out.println("INSERTION: " + userInfo.toString());
+            usersCollection.insertOne(userInfo);
             return true;
         } catch (MongoWriteException e) {
             if (e.getError().getCategory().equals(ErrorCategory.DUPLICATE_KEY)) {
@@ -72,6 +77,11 @@ public class UserDAO {
 
         // XXX look in the user collection for a user that has this username
         // assign the result to the user variable.
+        Document searchQuery = new Document();
+        searchQuery.append("_id", username);
+        BasicDBObject sortFilter = new BasicDBObject().append("_id", username);
+        user = usersCollection.find().filter(sortFilter).first();
+
 
         if (user == null) {
             System.out.println("User not in database");
