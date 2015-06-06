@@ -36,9 +36,7 @@ import java.io.Writer;
 import java.util.ArrayList;
 import java.util.HashMap;
 
-import static spark.Spark.get;
-import static spark.Spark.post;
-import static spark.Spark.setPort;
+import static spark.Spark.*;
 
 /**
  * This class encapsulates the controllers for the blog web application.  It delegates all interaction with MongoDB
@@ -51,6 +49,17 @@ public class BlogController {
     private final UserDAO userDAO;
     private final SessionDAO sessionDAO;
 
+    public BlogController(String mongoURIString) throws IOException {
+        final MongoClient mongoClient = new MongoClient(new MongoClientURI(mongoURIString));
+        final MongoDatabase blogDatabase = mongoClient.getDatabase("blog");
+        userDAO = new UserDAO(blogDatabase);
+        sessionDAO = new SessionDAO(blogDatabase);
+
+        cfg = createFreemarkerConfiguration();
+        setPort(8082);
+        initializeRoutes();
+    }
+
     public static void main(String[] args) throws IOException {
         if (args.length == 0) {
             new BlogController("mongodb://localhost");
@@ -60,48 +69,6 @@ public class BlogController {
         }
     }
 
-    public BlogController(String mongoURIString) throws IOException {
-        final MongoClient mongoClient = new MongoClient(new MongoClientURI(mongoURIString));
-        final MongoDatabase blogDatabase = mongoClient.getDatabase("blog");
-            System.out.print("");
-        userDAO = new UserDAO(blogDatabase);
-        sessionDAO = new SessionDAO(blogDatabase);
-
-        cfg = createFreemarkerConfiguration();
-        setPort(8082);
-        initializeRoutes();
-    }
-
-    abstract class FreemarkerBasedRoute extends Route {
-        final Template template;
-
-        /**
-         * Constructor
-         *
-         * @param path The route path which is used for matching. (e.g. /hello, users/:name)
-         */
-        protected FreemarkerBasedRoute(final String path, final String templateName) throws IOException {
-            super(path);
-            template = cfg.getTemplate(templateName);
-        }
-
-        @Override
-        public Object handle(Request request, Response response) {
-            StringWriter writer = new StringWriter();
-            try {
-                doHandle(request, response, writer);
-            } catch (Exception e) {
-                e.printStackTrace();
-                response.redirect("/internal_error");
-            }
-            return writer;
-        }
-
-        protected abstract void doHandle(final Request request, final Response response, final Writer writer)
-                throws IOException, TemplateException;
-
-    }
-
     private void initializeRoutes() throws IOException {
         // this is the blog home page
         get(new FreemarkerBasedRoute("/", "blog_template.ftl") {
@@ -109,14 +76,13 @@ public class BlogController {
             public void doHandle(Request request, Response response, Writer writer) throws IOException, TemplateException {
                 String username = sessionDAO.findUserNameBySessionId(getSessionCookie(request));
 
-               // this is where we would normally load up the blog data
-               // but this week, we just display a placeholder.
+                // this is where we would normally load up the blog data
+                // but this week, we just display a placeholder.
                 HashMap<String, String> root = new HashMap<String, String>();
 
                 template.process(root, writer);
             }
         });
-
 
 
         // handle the signup post
@@ -139,8 +105,7 @@ public class BlogController {
                         // duplicate user
                         root.put("username_error", "Username already in use, Please choose another");
                         template.process(root, writer);
-                    }
-                    else {
+                    } else {
                         // good user, let's start a session
                         String sessionID = sessionDAO.startSession(username);
                         System.out.println("Session ID is" + sessionID);
@@ -148,8 +113,7 @@ public class BlogController {
                         response.raw().addCookie(new Cookie("session", sessionID));
                         response.redirect("/welcome");
                     }
-                }
-                else {
+                } else {
                     // bad signup
                     System.out.println("User Registration did not validate");
                     template.process(root, writer);
@@ -179,8 +143,6 @@ public class BlogController {
         });
 
 
-
-
         get(new FreemarkerBasedRoute("/welcome", "welcome.ftl") {
             @Override
             protected void doHandle(Request request, Response response, Writer writer) throws IOException, TemplateException {
@@ -192,8 +154,7 @@ public class BlogController {
                     System.out.println("welcome() can't identify the user, redirecting to signup");
                     response.redirect("/signup");
 
-                }
-                else {
+                } else {
                     SimpleHash root = new SimpleHash();
 
                     root.put("username", username);
@@ -237,15 +198,13 @@ public class BlogController {
 
                     if (sessionID == null) {
                         response.redirect("/internal_error");
-                    }
-                    else {
+                    } else {
                         // set the cookie for the user's browser
                         response.raw().addCookie(new Cookie("session", sessionID));
 
                         response.redirect("/welcome");
                     }
-                }
-                else {
+                } else {
                     SimpleHash root = new SimpleHash();
 
 
@@ -258,7 +217,6 @@ public class BlogController {
         });
 
 
-
         // allows the user to logout of the blog
         get(new FreemarkerBasedRoute("/logout", "signup.ftl") {
             @Override
@@ -269,14 +227,15 @@ public class BlogController {
                 if (sessionID == null) {
                     // no session to end
                     response.redirect("/login");
-                }
-                else {
+                } else {
                     // deletes from session table
                     sessionDAO.endSession(sessionID);
 
                     // this should delete the cookie
                     Cookie c = getSessionCookieActual(request);
-                    c.setMaxAge(0);
+                    if (c != null) {
+                        c.setMaxAge(0);
+                    }
 
                     response.raw().addCookie(c);
 
@@ -387,5 +346,35 @@ public class BlogController {
         Configuration retVal = new Configuration();
         retVal.setClassForTemplateLoading(BlogController.class, "/freemarker");
         return retVal;
+    }
+
+    abstract class FreemarkerBasedRoute extends Route {
+        final Template template;
+
+        /**
+         * Constructor
+         *
+         * @param path The route path which is used for matching. (e.g. /hello, users/:name)
+         */
+        protected FreemarkerBasedRoute(final String path, final String templateName) throws IOException {
+            super(path);
+            template = cfg.getTemplate(templateName);
+        }
+
+        @Override
+        public Object handle(Request request, Response response) {
+            StringWriter writer = new StringWriter();
+            try {
+                doHandle(request, response, writer);
+            } catch (Exception e) {
+                e.printStackTrace();
+                response.redirect("/internal_error");
+            }
+            return writer;
+        }
+
+        protected abstract void doHandle(final Request request, final Response response, final Writer writer)
+                throws IOException, TemplateException;
+
     }
 }
